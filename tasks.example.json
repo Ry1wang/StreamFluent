@@ -1,0 +1,13 @@
+[
+    {
+        "audio_path": "/path/to/your/audio.mp3",
+        "image_path": "/path/to/your/image.jpg",
+        "title": "Video Title Example | Ep. 1",
+        "desc": "Video Description",
+        "tags": "Tag1,Tag2,English",
+        "tid": 181,
+        "copyright": 1,
+        "source": "",
+        "bili_cover_path": "/path/to/cover.jpg"
+    }
+]

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# IntelliJ
+.idea/
+
+# Mac
+.DS_Store
+
+# Project Specific - Sensitive/Local
+bili_sess.json
+karaoke_tasks.db
+tasks.json
+
+# Generated Output
+output/
+
+# Media Files (Don't commit large binaries unless necessary)
+*.mp3
+*.mp4
+*.m4a
+*.wav

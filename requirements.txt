@@ -1,0 +1,7 @@
+faster-whisper
+SQLAlchemy
+torch
+tqdm
+bilibili-api-python
+qrcode
+Pillow
