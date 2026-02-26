@@ -155,7 +155,7 @@ def scan_directory(base_dir):
         task["tags"] = "英语听力,英语学习,PodCast,English"
         task["tid"] = 181 # Knowledge default (知识区)
         task["copyright"] = 2 # 1=Original,2=Cover
-        task["source"] = ""   
+        task["source"] = "https://open.spotify.com/show/571TfkIrKfbMXse360yYfT?si=f40497ceb21e42e8"   
         task["bili_cover_path"] = bili_cover_path
         
         tasks.append(task)

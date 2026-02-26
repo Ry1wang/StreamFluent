@@ -130,7 +130,7 @@ async def upload(video_path, title, desc, tags, copyright=1, source="", cover_pa
     except Exception as e:
         print(f"\nUpload failed for '{title}': {e}")
 
-async def batch_upload(json_path):
+async def batch_upload(json_path, cleanup=False):
     if not os.path.exists(CREDENTIAL_FILE):
         print("Please login first using --login")
         return
@@ -177,8 +177,9 @@ async def batch_upload(json_path):
             print(f"Skipping '{title}': Video file missing at {video_path}")
             continue
             
-        # 2. Get Cover Image from JSON
-        cover_path = task.get("image_path")
+        # 2. Get Cover Image from JSON (bili_cover_path is the Bilibili cover;
+        #    image_path is the video background — they are different files)
+        cover_path = task.get("bili_cover_path") or task.get("image_path")
         
         print(f"Found video: {video_path}")
         
@@ -194,7 +195,7 @@ async def batch_upload(json_path):
         )
         
         # 3. Cleanup after success (optional but requested)
-        if getattr(args, "cleanup", False):
+        if cleanup:
             print(f"Cleaning up files for '{title}'...")
             files_to_delete = [
                 video_path,
@@ -235,7 +236,7 @@ if __name__ == "__main__":
     if args.login:
         asyncio.run(login())
     elif args.batch:
-        asyncio.run(batch_upload(args.batch))
+        asyncio.run(batch_upload(args.batch, cleanup=args.cleanup))
     elif args.upload:
         if not args.title:
             print("Error: --title is required for upload.")

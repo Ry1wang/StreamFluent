@@ -1,104 +1,174 @@
-# Karaoke Video Generator
+# StreamFluent — 卡拉 OK 视频自动化管线
 
-这是一个基于 Python 的自动化工具，用于将音频文件和背景图片合并生成带有卡拉 OK 字幕效果的视频 (MP4)。
+基于 **CrewAI** 多智能体框架的 Podcast 自动化工具：扫描音频 → 生成卡拉 OK 视频 → 上传 Bilibili，全流程一键完成。
 
-它使用 **Faster-Whisper** 进行语音识别和时间戳提取，生成 **ASS 字幕**（包含逐字卡拉 OK 效果），并使用 **FFmpeg** 渲染最终视频。同时也内置了一个简单的 SQLite 任务队列系统。
+底层引擎使用 **Faster-Whisper** 转录、**ASS 字幕**逐字高亮、**FFmpeg** 渲染，LLM 编排层使用 **DeepSeek**（OpenAI 兼容接口）驱动 CrewAI 智能体。
 
-## 功能
+---
 
-- 🎙️ **自动转录**：使用 `faster-whisper` 高效提取音频文本和单词级时间戳。
-- 🎵 **卡拉 OK 字幕**：生成 `.ass` 字幕文件，支持平滑的逐字高亮效果。
-- 🎬 **视频合成**：将音频、静态背景图和动态字幕合成为 1080p MP4 视频。
-- 🆙 **自动上传**：支持 Bilibili 视频上传（单视频或批量任务），包含扫码登录功能。
-- 📝 **任务管理**：使用 SQLite 数据库追踪任务状态（等待中、处理中、完成、失败）。
-- 🖥️ **Mac 优化**：包含针对 macOS 的 OpenMP 环境变量修复。
+## 项目结构
 
-## 环境要求
-
-### 系统依赖
-必须安装 **FFmpeg** 并确保其在系统 `PATH` 中。
-- **macOS (Homebrew)**: `brew install ffmpeg`
-- **Linux**: `sudo apt install ffmpeg`
-- **Windows**: 下载并配置环境变量。
-
-### Python 依赖
-请确保使用 Python 3.8+。
-```bash
-pip install -r requirements.txt
 ```
-pip install -r requirements.txt
+StreamFluent/
+├── main.py                   # 一键启动入口（CrewAI 管线）
+├── .env                      # API 密钥配置（本地，勿提交）
+├── .env.example              # 配置模板
+│
+├── crew/                     # CrewAI 编排层
+│   ├── agents.py             # 3 个智能体定义（DeepSeek LLM）
+│   ├── tasks.py              # 3 个顺序任务定义
+│   └── tools/
+│       ├── scan_tools.py     # ScanDirectoryTool
+│       ├── karaoke_tools.py  # ProcessKaraokeTasksTool
+│       └── upload_tools.py   # BilibiliUploadTool
+│
+├── karaoke_gen.py            # 引擎层：Whisper 转录 + ASS 生成 + FFmpeg 渲染
+├── generate_images.py        # 引擎层：PIL 生成背景图 / 封面图
+├── scan_tasks.py             # 引擎层：目录扫描 + 任务 JSON 构建
+├── bili_upload.py            # 引擎层：Bilibili 上传（单个/批量）
+└── batch_run_kgen.py         # 旧版批量入口（仍可独立使用）
 ```
-*主要依赖库：`faster-whisper`, `SQLAlchemy`, `torch`, `tqdm`, `bilibili-api-python`, `Pillow`*
+
+---
 
 ## 快速开始
 
-### 命令行使用
+### 1. 安装依赖
 
-直接运行脚本，传入音频文件路径和背景图片路径：
-
+**系统依赖：**
 ```bash
-python karaoke_gen.py <audio_path> <image_path>
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
 ```
 
-**示例：**
+**Python 依赖（Python 3.8+）：**
+```bash
+pip install -r requirements.txt
+```
+
+主要依赖：`crewai`, `langchain-openai`, `faster-whisper`, `SQLAlchemy`, `Pillow`, `bilibili-api-python`, `python-dotenv`
+
+### 2. 配置环境变量
+
+复制模板并填入 DeepSeek API 密钥：
+```bash
+cp .env.example .env
+```
+
+`.env` 内容：
+```
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_API_BASE=https://api.deepseek.com
+```
+
+### 3. Bilibili 登录（首次使用）
+
+```bash
+python bili_upload.py --login
+```
+扫描终端中的二维码，凭证将保存到 `bili_sess.json`（请勿提交到版本控制）。
+
+### 4. 运行管线
+
+```bash
+# 完整流程：扫描 → 生产 → 上传
+python main.py --dir ../PodCast
+
+# 仅扫描 + 生产，跳过上传
+python main.py --dir ../PodCast --skip-upload
+
+# 指定 tasks.json 输出路径
+python main.py --dir ../PodCast --tasks my_tasks.json
+```
+
+---
+
+## CrewAI 多智能体架构
+
+管线由 3 个顺序执行的智能体组成，均由 **DeepSeek** 驱动：
+
+```
+[Scanner Agent] → tasks.json → [Producer Agent] → DB → [Publisher Agent] → Bilibili
+```
+
+| 智能体 | 工具 | 职责 |
+|---|---|---|
+| **Podcast Content Scanner** | `ScanDirectoryTool` | 递归扫描目录，匹配音频与封面，自动生成缺失图片，输出 `tasks.json` |
+| **Karaoke Video Producer** | `ProcessKaraokeTasksTool` | Whisper 转录 → ASS 字幕生成 → FFmpeg 渲染 MP4 |
+| **Bilibili Content Publisher** | `BilibiliUploadTool` | 批量上传视频，附带标题、标签、分区和封面图 |
+
+---
+
+## 引擎层（独立使用）
+
+CrewAI 层只是编排，各引擎模块均可独立调用。
+
+### 单曲生成
+
 ```bash
 python karaoke_gen.py song.mp3 background.jpg
 ```
 
-脚本将自动：
-1. 创建数据库任务。
-2. 开始转录。
-3. 生成字幕和视频。
-4. 输出文件保存在 `output/` 目录下。
-
-### Bilibili 上传
-
-1. **登录**（扫码）：
-   ```bash
-   python bili_upload.py --login
-   ```
-   *凭证将保存在本地 `bili_sess.json`（请勿泄露）。*
-
-2. **单视频上传**：
-   ```bash
-   python bili_upload.py --upload output/video.mp4 --title "我的视频" --cover cover.jpg
-   ```
-
-3. **批量上传**（结合任务系统）：
-   确保 `tasks.json` 存在并配置正确，然后运行：
-   ```bash
-   python bili_upload.py --batch tasks.json
-   ```
-
 ### 代码调用
-
-你也可以在其他 Python 脚本中导入使用：
 
 ```python
 from karaoke_gen import KaraokeGenerator
 
 gen = KaraokeGenerator()
-task_id = gen.add_task("test_audio.mp3", "bg.jpg")
+gen.add_task("episode.mp3", "bg.jpg")
 gen.process_pending_tasks()
 ```
 
+### 单视频上传
+
+```bash
+python bili_upload.py --upload output/video.mp4 --title "我的视频" --cover cover.jpg
+```
+
+### 批量上传（无 CrewAI）
+
+```bash
+python bili_upload.py --batch tasks.json
+```
+
+---
+
 ## 输出文件
 
-所有生成的文件都位于 `output/` 文件夹中，文件名格式为 `{filename}_{timestamp}`：
-- `*.txt`: 纯文本歌词
-- `*.ass`: 卡拉 OK 字幕文件
-- `*.mp4`: 最终合成的视频
+所有生成文件保存在 `output/` 目录，命名格式 `{stem}_{timestamp}`：
 
-## 配置与自定义
+| 文件 | 说明 |
+|---|---|
+| `*.txt` | 纯文本转录稿 |
+| `*.ass` | 卡拉 OK 字幕（ASS 格式，逐字高亮） |
+| `*.mp4` | 最终合成视频（1080p，静态背景 + 音频 + 字幕） |
 
-- **字幕样式**：在 `KaraokeGenerator` 类的 `SubtitleGenerator.generate_ass` 方法中修改 `[V4+ Styles]`。
-- **字幕位置**：目前默认在屏幕中心偏下位置。如需修改，请调整代码中的 `\pos(x,y)` 参数。
-- **模型大小**：默认使用 `base` 模型。在 `KaraokeGenerator.__init__` 中可修改 `Transcriber(model_size="medium")` 以获得更高精度。
+任务状态通过 SQLite（`karaoke_tasks.db`）追踪：`pending` → `processing` → `completed` / `failed`。
+
+---
+
+## 配置说明
+
+| 项目 | 位置 | 说明 |
+|---|---|---|
+| LLM 模型 | `crew/agents.py` | 替换 `deepseek_llm` 可切换任意 OpenAI 兼容模型 |
+| Whisper 模型大小 | `karaoke_gen.py` `Transcriber` | 默认 `base`，改为 `medium`/`large` 提升精度 |
+| 字幕样式 | `karaoke_gen.py` `SubtitleGenerator` | 修改 `[V4+ Styles]` 中的字体、大小、颜色 |
+| 字幕位置 | `karaoke_gen.py` | 调整 `\pos(960,680)` 参数 |
+| Bilibili 分区 | `scan_tasks.py` | 默认 `tid=181`（知识区），按需修改 |
+
+---
 
 ## 常见问题
 
-**Q: 报错 `OMP: Error #15: Initializing libomp.dylib...`**
-A: 脚本已内置 `os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"` 修复此问题，通常无需额外操作。
+**Q: `OMP: Error #15: Initializing libomp.dylib`**
+A: 已内置 `KMP_DUPLICATE_LIB_OK=TRUE` 修复，无需额外操作。
 
 **Q: 生成速度慢？**
-A: `faster-whisper` 默认在 CPU 上运行（为了兼容性）。如果有 NVIDIA 显卡，可以修改 `Transcriber` 类中的 `device="cuda"` 以加速。
+A: 默认 CPU 推理。有 NVIDIA 显卡时，在 `karaoke_gen.py` 的 `Transcriber` 中设置 `device="cuda"`。
+
+**Q: Bilibili 上传失败？**
+A: 重新运行 `python bili_upload.py --login` 刷新凭证。

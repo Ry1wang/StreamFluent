@@ -50,12 +50,31 @@ class JobManager:
 
     def add_task(self, audio_path: str, image_path: str) -> int:
         session = self.Session()
+        # Check if task already exists for this audio file
+        existing_task = session.query(Task).filter_by(audio_path=audio_path).first()
+        
+        if existing_task:
+            task_id = existing_task.id
+            if existing_task.status == "completed":
+                logger.info(f"Task {task_id} already completed for: {audio_path}")
+            elif existing_task.status in ["processing", "failed"]:
+                # Recover from crash or retry failed task
+                old_status = existing_task.status
+                existing_task.status = "pending"
+                session.commit()
+                logger.info(f"Task {task_id} reset from '{old_status}' -> 'pending'")
+            else:
+                logger.info(f"Task {task_id} exists with status: {existing_task.status}")
+            session.close()
+            return task_id
+
+        # Create new task if not found
         task = Task(audio_path=audio_path, image_path=image_path, status="pending")
         session.add(task)
         session.commit()
         task_id = task.id
         session.close()
-        logger.info(f"Task added: ID {task_id}")
+        logger.info(f"New task added: ID {task_id}")
         return task_id
 
     def update_status(self, task_id: int, status: str, output_path: str = None, error_msg: str = None):

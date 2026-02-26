@@ -5,3 +5,9 @@ tqdm
 bilibili-api-python
 qrcode
 Pillow
+crewai
+litellm
+python-dotenv
+fastapi
+email-validator
+fastapi-sso
